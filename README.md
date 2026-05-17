@@ -74,26 +74,6 @@ docker start cs523bdt-lab
 docker ps --filter name=cs523bdt-lab
 ```
 
-If you need to create it from the course image:
-
-```bash
-read -rsp "Class password: " CLASS_PASS; echo
-
-docker run -d \
-  --name cs523bdt-lab \
-  -e CLASS_PASS="$CLASS_PASS" \
-  -p 4040:4040 \
-  -p 8088:8088 \
-  -p 9870:9870 \
-  -p 10000:10000 \
-  -p 16010:16010 \
-  mmukadam/cs523bdt-lab:v4.0
-
-unset CLASS_PASS
-```
-
-Use the image tag required by your instructor if it is different from `v4.0`.
-
 Important: Docker port mappings are set only when the container is created.
 For the Streamlit dashboard to open from the host, `docker port cs523bdt-lab`
 must show `10000/tcp`. If it does not, recreate the container with
