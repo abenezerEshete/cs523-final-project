@@ -26,11 +26,25 @@ st.sidebar.success("Spark: Streaming")
 st.sidebar.success("HBase: Connected")
 
 # ── HBase reader functions ───────────────────────────────────
+def format_hbase_error(table_name, error):
+    message = str(error)
+    if "TableNotFoundException" in message:
+        return (
+            f"HBase table `{table_name}` does not exist yet. "
+            "Run `bash scripts/setup.sh` inside `/opt/my_code/cs523-final-project`, "
+            "wait for `Setup complete`, then restart Spark and refresh this page."
+        )
+
+    first_line = message.splitlines()[0] if message else repr(error)
+    return f"HBase error while reading `{table_name}`: {first_line}"
+
+
 def read_windowed(symbol, limit=20):
     rows = []
+    table_name = "crypto_windowed"
     try:
         conn = happybase.Connection("localhost")
-        table = conn.table("crypto_windowed")
+        table = conn.table(table_name)
         for key, data in table.scan(row_prefix=symbol.encode(), limit=limit):
             rows.append({
                 "window":       key.decode().replace(symbol + "_", ""),
@@ -41,14 +55,15 @@ def read_windowed(symbol, limit=20):
             })
         conn.close()
     except Exception as e:
-        st.error(f"HBase error: {e}")
+        st.error(format_hbase_error(table_name, e))
     return pd.DataFrame(rows)
 
 def read_moving_avg(symbol, limit=20):
     rows = []
+    table_name = "crypto_moving_avg"
     try:
         conn = happybase.Connection("localhost")
-        table = conn.table("crypto_moving_avg")
+        table = conn.table(table_name)
         for key, data in table.scan(row_prefix=symbol.encode(), limit=limit):
             rows.append({
                 "window":           key.decode().replace(symbol + "_", ""),
@@ -57,14 +72,15 @@ def read_moving_avg(symbol, limit=20):
             })
         conn.close()
     except Exception as e:
-        st.error(f"HBase error: {e}")
+        st.error(format_hbase_error(table_name, e))
     return pd.DataFrame(rows)
 
 def read_anomalies(symbol, limit=20):
     rows = []
+    table_name = "crypto_anomalies"
     try:
         conn = happybase.Connection("localhost")
-        table = conn.table("crypto_anomalies")
+        table = conn.table(table_name)
         for key, data in table.scan(row_prefix=symbol.encode(), limit=limit):
             rows.append({
                 "window":           key.decode().replace(symbol + "_", ""),
@@ -76,7 +92,7 @@ def read_anomalies(symbol, limit=20):
             })
         conn.close()
     except Exception as e:
-        st.error(f"HBase error: {e}")
+        st.error(format_hbase_error(table_name, e))
     return pd.DataFrame(rows)
 
 # ── Dashboard loop ───────────────────────────────────────────
@@ -133,7 +149,7 @@ while True:
                 st.warning(f"⚠️ {anomaly_count} anomalies detected!")
             else:
                 st.success("No anomalies detected in current data")
-            st.dataframe(df_anom, use_container_width=True, height=300)
+            st.dataframe(df_anom, width="stretch", height=300)
         else:
             st.info("No anomaly data yet...")
 

@@ -71,17 +71,43 @@ HBASE
   return 1
 }
 
+wait_for_kafka() {
+  local attempt
+
+  for attempt in $(seq 1 12); do
+    if timeout 10 /opt/kafka/bin/kafka-topics.sh \
+      --bootstrap-server localhost:9092 \
+      --list >/tmp/kafka_topic_check.log 2>&1; then
+      echo "✓ Kafka is ready"
+      return 0
+    fi
+
+    echo "Waiting for Kafka to become ready (${attempt}/12)..."
+    sleep 5
+  done
+
+  echo ""
+  echo "ERROR: Kafka is not ready."
+  echo "Last Kafka topic-check output:"
+  tail -40 /tmp/kafka_topic_check.log || true
+  echo ""
+  echo "Check Kafka logs with:"
+  echo "  tail -80 /opt/kafka/logs/server.log"
+  return 1
+}
+
 # ── Python dependencies ───────────────────────────────────────
 echo "[1/4] Installing Python dependencies..."
 curl https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py 2>/dev/null
-python3 /tmp/get-pip.py --break-system-packages -q
+python3 /tmp/get-pip.py --break-system-packages --root-user-action=ignore -q
 python3 -m pip install \
   kafka-python \
   websocket-client \
   happybase \
   streamlit \
   pandas \
-  --break-system-packages -q
+  --break-system-packages \
+  --root-user-action=ignore -q
 echo "✓ Python dependencies installed"
 
 # ── Spark Kafka connector jars ────────────────────────────────
@@ -109,19 +135,21 @@ echo ""
 echo "[3/4] Creating Kafka topic..."
 unset CLASSPATH HADOOP_CONF_DIR HADOOP_HOME
 
-TOPIC_EXISTS=$(/opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --list 2>/dev/null | grep "crypto-trades")
+wait_for_kafka
 
-if [ -z "$TOPIC_EXISTS" ]; then
+if /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --list 2>/dev/null | grep -qx "crypto-trades"; then
+  echo "✓ Kafka topic 'crypto-trades' already exists"
+else
   /opt/kafka/bin/kafka-topics.sh \
     --bootstrap-server localhost:9092 \
     --create \
+    --if-not-exists \
     --topic crypto-trades \
     --partitions 3 \
     --replication-factor 1
   echo "✓ Kafka topic 'crypto-trades' created"
-else
-  echo "✓ Kafka topic 'crypto-trades' already exists"
 fi
 
 # ── HBase tables ──────────────────────────────────────────────
@@ -134,7 +162,7 @@ fi
 
 wait_for_hbase
 
-timeout 180 /opt/hbase/bin/hbase shell -n << 'HBASE'
+if ! timeout 180 /opt/hbase/bin/hbase shell -n >/tmp/hbase_table_setup.log 2>&1 << 'HBASE'
 tables = ['crypto_windowed', 'crypto_moving_avg', 'crypto_anomalies']
 
 tables.each do |table_name|
@@ -149,11 +177,26 @@ create 'crypto_moving_avg', 'price', 'volume'
 create 'crypto_anomalies',  'price', 'alert'
 list
 HBASE
+then
+  echo "ERROR: Failed to create HBase tables."
+  echo "Last HBase table-setup output:"
+  tail -80 /tmp/hbase_table_setup.log || true
+  exit 1
+fi
 
-/opt/hadoop/bin/hdfs dfs -mkdir -p /cs523/static
-/opt/hadoop/bin/hdfs dfs -put -f \
+if ! /opt/hadoop/bin/hdfs dfs -mkdir -p /cs523/static >/tmp/hdfs_upload.log 2>&1; then
+  echo "ERROR: Failed to create HDFS directory /cs523/static."
+  cat /tmp/hdfs_upload.log || true
+  exit 1
+fi
+
+if ! /opt/hadoop/bin/hdfs dfs -put -f \
   "$PROJECT_DIR/data/coin_metadata.csv" \
-  /cs523/static/coin_metadata.csv
+  /cs523/static/coin_metadata.csv >>/tmp/hdfs_upload.log 2>&1; then
+  echo "ERROR: Failed to upload coin_metadata.csv to HDFS."
+  cat /tmp/hdfs_upload.log || true
+  exit 1
+fi
 
 echo "✓ HBase tables created"
 echo "✓ coin_metadata.csv uploaded to HDFS at /cs523/static/"

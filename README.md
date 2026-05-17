@@ -99,6 +99,9 @@ docker exec cs523bdt-lab bash -lc \
   'cd /opt/my_code/cs523-final-project && bash scripts/start_services.sh'
 ```
 
+This script is safe to rerun. If a service is already running, it reports that
+and does not start a duplicate process.
+
 ### 5. Run one-time project setup
 
 ```bash
@@ -112,7 +115,21 @@ This setup creates:
 - HBase tables: `crypto_windowed`, `crypto_moving_avg`, `crypto_anomalies`
 - HDFS file: `/cs523/static/coin_metadata.csv`
 
+Do not start the app until this command prints:
+
+```text
+=== Setup complete! ===
+```
+
 ## Start the App
+
+If you previously started the app before setup completed, stop the old app
+processes first:
+
+```bash
+docker exec cs523bdt-lab bash -lc \
+  'pkill -f "src/producer.py|spark_to_hbase.py|streamlit|dashboard.py|SparkSubmit" || true'
+```
 
 Start the producer:
 
