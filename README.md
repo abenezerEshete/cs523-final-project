@@ -151,8 +151,29 @@ http://localhost:10000
 
 Grafana is optional. Streamlit still works without it.
 
-Grafana needs two extra containers: `crypto-postgres` and `crypto-grafana`.
-Start them from the project folder:
+Grafana uses a Docker Postgres container as its SQL data source. The two
+containers are:
+
+- `crypto-postgres`: stores Spark aggregates for Grafana
+- `crypto-grafana`: serves the Grafana UI
+
+### 1. Start or Create Postgres and Grafana
+
+First check whether the containers already exist:
+
+```bash
+docker ps -a --filter name=crypto-postgres --filter name=crypto-grafana
+```
+
+If they already exist, start them:
+
+```bash
+docker start crypto-postgres crypto-grafana
+```
+
+Then skip to the initialization step below.
+
+If they do not exist, create them from the project folder:
 
 If port `3000` is busy, choose another host port before starting Grafana:
 
@@ -169,11 +190,34 @@ docker compose \
   up -d crypto-postgres grafana
 ```
 
-Connect the lab container to the Grafana compose network so Spark can reach
-Postgres by the hostname `crypto-postgres`:
+The Compose file creates Postgres automatically. You do not need a separate
+manual `docker run postgres` command.
+
+If `docker compose up` fails with `container name "/crypto-postgres" is already
+in use`, that means the Postgres container already exists. Use:
 
 ```bash
-docker network connect cs523-grafana_default cs523bdt-lab
+docker start crypto-postgres crypto-grafana
+```
+
+If you intentionally want a completely fresh Grafana/Postgres setup and do not
+need the old Grafana data, remove the old containers first:
+
+```bash
+docker rm -f crypto-grafana crypto-postgres
+```
+
+Then rerun the `docker compose up` command.
+
+Connect the lab container to the same Docker network as `crypto-postgres` so
+Spark can reach Postgres by the hostname `crypto-postgres`:
+
+```bash
+POSTGRES_NETWORK="$(docker inspect crypto-postgres \
+  --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' \
+  | head -n 1)"
+
+docker network connect "$POSTGRES_NETWORK" cs523bdt-lab 2>/dev/null || true
 ```
 
 If Docker says the container is already connected, ignore that message.
@@ -189,14 +233,23 @@ Defaults:
 | Postgres user | `crypto` |
 | Postgres password | `crypto_password` |
 
-If you set `GRAFANA_HOST_PORT`, use that port in the browser URL.
+Check the actual host port with:
 
-Initialize the Grafana tables and Spark Postgres dependency:
+```bash
+docker port crypto-grafana 3000
+```
+
+### 2. Initialize Postgres Tables and Spark Dependency
+
+Initialize the Grafana Postgres tables and install the Spark Postgres client
+dependency in `cs523bdt-lab`:
 
 ```bash
 cd "$PROJECT_DIR"
 bash scripts/setup_grafana.sh
 ```
+
+### 3. Start Spark With Postgres Writes Enabled
 
 For Grafana data, start Spark with Postgres writes enabled:
 
@@ -213,10 +266,10 @@ docker exec -d cs523bdt-lab bash -lc \
    bash scripts/run_spark.sh spark_to_hbase >> /tmp/crypto_spark.log 2>&1'
 ```
 
-Open Grafana at `http://localhost:3000`, or at your chosen
-`GRAFANA_HOST_PORT`. The provisioned dashboard is under the `CS523` folder and
-includes 15 widgets for price, volume, moving averages, anomalies, freshness,
-and recent rows.
+Open Grafana at the host port shown by `docker port crypto-grafana 3000`. For
+example, if it prints `0.0.0.0:3001`, open `http://localhost:3001`. The
+provisioned dashboard is under the `CS523` folder and includes 15 widgets for
+price, volume, moving averages, anomalies, freshness, and recent rows.
 
 ## Optional Enriched Job
 
@@ -263,7 +316,8 @@ docker port cs523bdt-lab
 Check Grafana:
 
 ```bash
-curl -s "http://localhost:${GRAFANA_HOST_PORT:-3000}/api/health"
+GRAFANA_PORT="$(docker port crypto-grafana 3000/tcp | awk -F: 'NR==1 {print $NF}')"
+curl -s "http://localhost:${GRAFANA_PORT}/api/health"
 ```
 
 Check Grafana Postgres rows:
@@ -279,6 +333,17 @@ docker exec -e PGPASSWORD=crypto_password crypto-postgres \
 If `docker run` shows `ACCESS DENIED`, the course image needs `CLASS_PASS`.
 Create the container with the instructor-provided password using
 `-e CLASS_PASS=...`.
+
+If setup fails with `hbase:meta is not online`, reset the lab HBase metadata and
+rerun setup:
+
+```bash
+docker exec cs523bdt-lab bash -lc \
+  'cd /opt/my_code/cs523-final-project && RESET_HBASE=1 bash scripts/setup.sh'
+```
+
+This removes HBase data under `/hbase` in HDFS inside the lab environment, then
+recreates the project tables.
 
 If `docker cp` fails because `/opt/my_code` does not exist, create the folder:
 
