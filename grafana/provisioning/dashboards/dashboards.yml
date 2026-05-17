@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: Crypto Analytics
+    orgId: 1
+    folder: CS523
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

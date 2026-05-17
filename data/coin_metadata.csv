@@ -1,0 +1,6 @@
+symbol,full_name,market_cap_tier,sector,country_of_origin,launched_year
+BTCUSD,Bitcoin,Mega Cap,Store of Value,USA,2009
+ETHUSD,Ethereum,Mega Cap,Smart Contract Platform,Canada,2015
+SOLUSD,Solana,Large Cap,Smart Contract Platform,USA,2020
+XRPUSD,XRP,Large Cap,Payment Protocol,USA,2012
+BNBUSD,Binance Coin,Large Cap,Exchange Token,China,2017
